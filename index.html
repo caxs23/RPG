@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>모바일 횡스크롤 RPG</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #87CEEB;
+            font-family: 'Arial', sans-serif;
+            user-select: none;
+            touch-action: none;
+        }
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        canvas {
+            display: block;
+        }
+        .ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 20px;
+            pointer-events: auto;
+        }
+        .btn {
+            width: 60px;
+            height: 60px;
+            background: rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+            active: scale(0.9);
+        }
+        .status-bar {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.6);
+            color: white;
+            padding: 10px;
+            border-radius: 8px;
+            pointer-events: auto;
+            min-width: 150px;
+        }
+        .dialog-box {
+            position: absolute;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80%;
+            background: white;
+            border: 4px solid #444;
+            padding: 15px;
+            display: none;
+            pointer-events: auto;
+            z-index: 100;
+        }
+        .shop-menu {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            display: none;
+            pointer-events: auto;
+            z-index: 101;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            max-width: 300px;
+            width: 90%;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+
+    <div class="ui-overlay">
+        <!-- Status -->
+        <div class="status-bar">
+            <div>골드: <span id="gold">0</span>G</div>
+            <div>공격력: <span id="power">10</span></div>
+            <div>전리품: <span id="loot">0</span>개</div>
+            <div>지역: <span id="location-name">마을</span></div>
+        </div>
+
+        <!-- Dialog -->
+        <div id="dialog" class="dialog-box">
+            <p id="dialog-text">상인: 전리품을 팔러 왔나?</p>
+            <button onclick="sellLoot()" class="bg-blue-500 text-white px-4 py-1 mt-2 rounded">전리품 판매 (개당 10G)</button>
+            <button onclick="toggleShop()" class="bg-green-500 text-white px-4 py-1 mt-2 rounded">장비 상점</button>
+            <button onclick="closeDialog()" class="ml-2 text-gray-500 underline">닫기</button>
+        </div>
+
+        <!-- Shop -->
+        <div id="shop" class="shop-menu">
+            <h2 class="text-xl font-bold mb-4">장비 상점</h2>
+            <div id="shop-items" class="space-y-3">
+                <!-- Items populated by JS -->
+            </div>
+            <button onclick="toggleShop()" class="mt-4 w-full bg-red-400 text-white py-2 rounded">나가기</button>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls">
+            <div class="flex gap-4">
+                <div id="btn-left" class="btn">◀</div>
+                <div id="btn-right" class="btn">▶</div>
+            </div>
+            <div class="flex gap-4">
+                <div id="btn-jump" class="btn">UP</div>
+                <div id="btn-attack" class="btn bg-red-200">ATT</div>
+                <div id="btn-action" class="btn bg-yellow-200">ACT</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// Game State
+const state = {
+    gold: 0,
+    loot: 0,
+    attackPower: 10,
+    weaponLevel: 1,
+    location: 'town', // 'town' or 'field'
+    dialogVisible: false,
+    shopVisible: false,
+    lastTime: 0
+};
+
+// Player Assets
+const playerImg1 = new Image();
+playerImg1.src = 'https://github.com/caxs23/plaffy-bird/blob/main/1-removebg-preview.png?raw=true';
+const playerImg2 = new Image();
+playerImg2.src = 'https://github.com/caxs23/plaffy-bird/blob/main/2-removebg-preview.png?raw=true';
+
+// Game Constants
+const GRAVITY = 0.6;
+const GROUND_Y = 0.8; // Ratio of screen height
+
+// Resize
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Input Handling
+const keys = { left: false, right: false, jump: false, attack: false };
+
+function setupControls() {
+    const bind = (id, key) => {
+        const el = document.getElementById(id);
+        el.addEventListener('touchstart', (e) => { e.preventDefault(); keys[key] = true; });
+        el.addEventListener('touchend', (e) => { e.preventDefault(); keys[key] = false; });
+        el.addEventListener('mousedown', () => keys[key] = true);
+        el.addEventListener('mouseup', () => keys[key] = false);
+    };
+    bind('btn-left', 'left');
+    bind('btn-right', 'right');
+    bind('btn-jump', 'jump');
+    
+    document.getElementById('btn-attack').addEventListener('click', () => player.attack());
+    document.getElementById('btn-action').addEventListener('click', () => player.interact());
+}
+
+// Objects
+const player = {
+    x: 100,
+    y: 0,
+    width: 60,
+    height: 80,
+    vx: 0,
+    vy: 0,
+    speed: 5,
+    jumpPower: -12,
+    isGrounded: false,
+    direction: 1, // 1: right, -1: left
+    frame: 0,
+    walkCounter: 0,
+    isAttacking: false,
+    attackCooldown: 0,
+
+    update() {
+        // Horizontal Move
+        if (keys.left) {
+            this.vx = -this.speed;
+            this.direction = -1;
+            this.walkCounter++;
+        } else if (keys.right) {
+            this.vx = this.speed;
+            this.direction = 1;
+            this.walkCounter++;
+        } else {
+            this.vx *= 0.8;
+            this.walkCounter = 0;
+        }
+
+        // Jump
+        if (keys.jump && this.isGrounded) {
+            this.vy = this.jumpPower;
+            this.isGrounded = false;
+        }
+
+        // Gravity
+        this.vy += GRAVITY;
+        this.x += this.vx;
+        this.y += this.vy;
+
+        // Ground Collision
+        const groundLevel = canvas.height * GROUND_Y - this.height;
+        if (this.y > groundLevel) {
+            this.y = groundLevel;
+            this.vy = 0;
+            this.isGrounded = true;
+        }
+
+        // Screen Boundary / Map Switch
+        if (this.x < -20) {
+            if (state.location === 'field') {
+                state.location = 'town';
+                this.x = canvas.width - 50;
+            } else {
+                this.x = -20;
+            }
+        }
+        if (this.x > canvas.width - 40) {
+            if (state.location === 'town') {
+                state.location = 'field';
+                this.x = 20;
+                spawnMonsters();
+            } else {
+                this.x = canvas.width - 40;
+            }
+        }
+
+        if (this.attackCooldown > 0) this.attackCooldown--;
+        if (this.attackCooldown < 10) this.isAttacking = false;
+
+        this.frame = (Math.floor(this.walkCounter / 10) % 2);
+    },
+
+    draw() {
+        ctx.save();
+        if (this.direction === -1) {
+            ctx.scale(-1, 1);
+            ctx.translate(-this.x - this.width, this.y);
+        } else {
+            ctx.translate(this.x, this.y);
+        }
+
+        // Animation: standing vs walking
+        const img = (this.walkCounter > 0 || !this.isGrounded) 
+            ? (this.frame === 0 ? playerImg1 : playerImg2)
+            : playerImg1;
+        
+        ctx.drawImage(img, 0, 0, this.width, this.height);
+
+        // Attack visual
+        if (this.isAttacking) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.beginPath();
+            ctx.arc(this.width + 10, this.height / 2, 20, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        ctx.restore();
+    },
+
+    attack() {
+        if (this.attackCooldown > 0) return;
+        this.isAttacking = true;
+        this.attackCooldown = 20;
+
+        // Hit Check
+        if (state.location === 'field') {
+            monsters.forEach(m => {
+                if (!m.dead) {
+                    const dx = (this.x + this.width/2) - (m.x + m.size/2);
+                    const dy = (this.y + this.height/2) - (m.y + m.size/2);
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist < 80) {
+                        m.hp -= state.attackPower;
+                        if (m.hp <= 0) {
+                            m.dead = true;
+                            state.loot++;
+                            updateUI();
+                        }
+                    }
+                }
+            });
+        }
+    },
+
+    interact() {
+        if (state.location === 'town' && Math.abs(this.x - canvas.width/2) < 100) {
+            state.dialogVisible = true;
+            document.getElementById('dialog').style.display = 'block';
+        }
+    }
+};
+
+const monsters = [];
+function spawnMonsters() {
+    monsters.length = 0;
+    const types = [
+        { emoji: '🐰', hp: 20, size: 40 },
+        { emoji: '🦊', hp: 50, size: 50 },
+        { emoji: '🐗', hp: 100, size: 60 }
+    ];
+    for (let i = 0; i < 5; i++) {
+        const type = types[Math.floor(Math.random() * types.length)];
+        monsters.push({
+            x: 300 + Math.random() * (canvas.width - 400),
+            y: canvas.height * GROUND_Y - type.size,
+            ...type,
+            dead: false,
+            initialHp: type.hp
+        });
+    }
+}
+
+// Background Drawing
+function drawBackground() {
+    // Sky
+    const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    grad.addColorStop(0, '#87CEEB');
+    grad.addColorStop(1, '#E0F6FF');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Clouds
+    ctx.fillStyle = 'white';
+    ctx.beginPath();
+    ctx.arc(100, 100, 30, 0, Math.PI*2);
+    ctx.arc(130, 100, 40, 0, Math.PI*2);
+    ctx.arc(170, 100, 30, 0, Math.PI*2);
+    ctx.fill();
+
+    // Mountains (Simple triangles)
+    ctx.fillStyle = '#4A7c59';
+    ctx.beginPath();
+    ctx.moveTo(-100, canvas.height * GROUND_Y);
+    ctx.lineTo(200, canvas.height * 0.4);
+    ctx.lineTo(500, canvas.height * GROUND_Y);
+    ctx.fill();
+
+    ctx.fillStyle = '#3d664a';
+    ctx.beginPath();
+    ctx.moveTo(300, canvas.height * GROUND_Y);
+    ctx.lineTo(600, canvas.height * 0.5);
+    ctx.lineTo(900, canvas.height * GROUND_Y);
+    ctx.fill();
+
+    // Ground
+    ctx.fillStyle = state.location === 'town' ? '#999' : '#7cfc00';
+    ctx.fillRect(0, canvas.height * GROUND_Y, canvas.width, canvas.height * (1 - GROUND_Y));
+    
+    // NPC in Town
+    if (state.location === 'town') {
+        ctx.font = '60px serif';
+        ctx.fillText('👨‍🌾', canvas.width/2, canvas.height * GROUND_Y - 10);
+        ctx.font = '16px Arial';
+        ctx.fillStyle = 'black';
+        ctx.textAlign = 'center';
+        ctx.fillText('상인 (ACT 클릭)', canvas.width/2 + 25, canvas.height * GROUND_Y - 80);
+    }
+}
+
+function updateUI() {
+    document.getElementById('gold').innerText = state.gold;
+    document.getElementById('power').innerText = state.attackPower;
+    document.getElementById('loot').innerText = state.loot;
+    document.getElementById('location-name').innerText = state.location === 'town' ? '마을' : '초보 사냥터';
+}
+
+function sellLoot() {
+    if (state.loot > 0) {
+        state.gold += state.loot * 10;
+        state.loot = 0;
+        updateUI();
+        document.getElementById('dialog-text').innerText = "상인: 고맙네! 아주 좋은 물건들이야.";
+    } else {
+        document.getElementById('dialog-text').innerText = "상인: 팔 물건이 없지 않은가?";
+    }
+}
+
+function closeDialog() {
+    state.dialogVisible = false;
+    document.getElementById('dialog').style.display = 'none';
+    document.getElementById('shop').style.display = 'none';
+}
+
+const shopItems = [
+    { name: "낡은 목검", power: 15, price: 100, level: 2 },
+    { name: "철검", power: 30, price: 300, level: 3 },
+    { name: "강철 대검", power: 60, price: 800, level: 4 },
+    { name: "용사의 검", power: 150, price: 2000, level: 5 }
+];
+
+function toggleShop() {
+    state.shopVisible = !state.shopVisible;
+    const shopEl = document.getElementById('shop');
+    shopEl.style.display = state.shopVisible ? 'block' : 'none';
+    
+    if (state.shopVisible) {
+        const itemsContainer = document.getElementById('shop-items');
+        itemsContainer.innerHTML = '';
+        shopItems.forEach(item => {
+            const isOwned = state.weaponLevel >= item.level;
+            const btn = document.createElement('div');
+            btn.className = "flex justify-between items-center border-b pb-2";
+            btn.innerHTML = `
+                <div>
+                    <div class="font-bold">${item.name}</div>
+                    <div class="text-xs text-gray-500">공격력: ${item.power}</div>
+                </div>
+                <button onclick="buyItem(${item.level}, ${item.price}, ${item.power})" 
+                    class="px-3 py-1 rounded ${isOwned ? 'bg-gray-300' : 'bg-yellow-400'}" 
+                    ${isOwned ? 'disabled' : ''}>
+                    ${isOwned ? '보유중' : item.price + 'G'}
+                </button>
+            `;
+            itemsContainer.appendChild(btn);
+        });
+    }
+}
+
+window.buyItem = function(level, price, power) {
+    if (state.gold >= price) {
+        state.gold -= price;
+        state.weaponLevel = level;
+        state.attackPower = power;
+        updateUI();
+        toggleShop();
+        toggleShop(); // Refresh
+        document.getElementById('dialog-text').innerText = "상인: 탁월한 선택이네!";
+    } else {
+        alert("골드가 부족합니다!");
+    }
+};
+
+function loop(timestamp) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    drawBackground();
+    
+    player.update();
+    player.draw();
+
+    if (state.location === 'field') {
+        monsters.forEach(m => {
+            if (!m.dead) {
+                ctx.font = `${m.size}px serif`;
+                ctx.fillText(m.emoji, m.x, m.y + m.size);
+                
+                // HP Bar
+                ctx.fillStyle = 'red';
+                ctx.fillRect(m.x, m.y - 10, m.size, 5);
+                ctx.fillStyle = 'green';
+                ctx.fillRect(m.x, m.y - 10, m.size * (m.hp / m.initialHp), 5);
+            }
+        });
+    }
+
+    requestAnimationFrame(loop);
+}
+
+// Start
+setupControls();
+spawnMonsters();
+updateUI();
+requestAnimationFrame(loop);
+
+</script>
+</body>
+</html>
