@@ -92,12 +92,23 @@
             max-width: 300px;
             width: 90%;
         }
+        /* Hidden elements for audio/video */
+        #hidden-media {
+            display: none;
+        }
     </style>
 </head>
 <body>
 
 <div id="game-container">
     <canvas id="gameCanvas"></canvas>
+
+    <!-- Hidden Media Elements -->
+    <div id="hidden-media">
+        <video id="jump-sound-vid" src="https://github.com/caxs23/runandjump/blob/main/jump.mp4?raw=true" preload="auto"></video>
+        <!-- Peaceful BGM: Using a public domain light fantasy track -->
+        <audio id="bgm" src="https://orangefreesounds.com/wp-content/uploads/2021/05/Light-fantasy-background-music.mp3" loop></audio>
+    </div>
 
     <div class="ui-overlay">
         <!-- Status -->
@@ -143,6 +154,8 @@
 <script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
+const jumpVid = document.getElementById('jump-sound-vid');
+const bgm = document.getElementById('bgm');
 
 // Game State
 const state = {
@@ -153,7 +166,8 @@ const state = {
     location: 'town', // 'town' or 'field'
     dialogVisible: false,
     shopVisible: false,
-    lastTime: 0
+    lastTime: 0,
+    audioInitialized: false
 };
 
 // Player Assets
@@ -177,20 +191,48 @@ resize();
 // Input Handling
 const keys = { left: false, right: false, jump: false, attack: false };
 
+function initAudio() {
+    if (!state.audioInitialized) {
+        bgm.play().catch(() => {});
+        state.audioInitialized = true;
+    }
+}
+
+function playJumpEffect() {
+    jumpVid.currentTime = 0;
+    jumpVid.play().catch(() => {});
+}
+
 function setupControls() {
     const bind = (id, key) => {
         const el = document.getElementById(id);
-        el.addEventListener('touchstart', (e) => { e.preventDefault(); keys[key] = true; });
-        el.addEventListener('touchend', (e) => { e.preventDefault(); keys[key] = false; });
-        el.addEventListener('mousedown', () => keys[key] = true);
+        el.addEventListener('touchstart', (e) => { 
+            e.preventDefault(); 
+            initAudio();
+            keys[key] = true; 
+        });
+        el.addEventListener('touchend', (e) => { 
+            e.preventDefault(); 
+            keys[key] = false; 
+        });
+        el.addEventListener('mousedown', () => {
+            initAudio();
+            keys[key] = true;
+        });
         el.addEventListener('mouseup', () => keys[key] = false);
     };
     bind('btn-left', 'left');
     bind('btn-right', 'right');
     bind('btn-jump', 'jump');
     
-    document.getElementById('btn-attack').addEventListener('click', () => player.attack());
-    document.getElementById('btn-action').addEventListener('click', () => player.interact());
+    document.getElementById('btn-attack').addEventListener('click', () => {
+        initAudio();
+        player.attack();
+    });
+    document.getElementById('btn-action').addEventListener('click', () => {
+        initAudio();
+        player.interact();
+    });
 }
 
 // Objects
@@ -229,6 +271,7 @@ const player = {
         if (keys.jump && this.isGrounded) {
             this.vy = this.jumpPower;
             this.isGrounded = false;
+            playJumpEffect();
         }
 
         // Gravity
@@ -300,6 +343,8 @@ const player = {
         if (this.attackCooldown > 0) return;
         this.isAttacking = true;
         this.attackCooldown = 20;
+        
+        playJumpEffect(); // Reuse the sound for attack as requested
 
         // Hit Check
         if (state.location === 'field') {
