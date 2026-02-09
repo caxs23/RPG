@@ -33,7 +33,7 @@
         }
         .controls {
             position: absolute;
-            bottom: 20px;
+            bottom: 60px;
             width: 100%;
             display: flex;
             justify-content: space-between;
@@ -66,7 +66,7 @@
         }
         .dialog-box {
             position: absolute;
-            bottom: 100px;
+            bottom: 140px;
             left: 50%;
             transform: translateX(-50%);
             width: 80%;
@@ -92,7 +92,6 @@
             max-width: 300px;
             width: 90%;
         }
-        /* Hidden elements for audio/video */
         #hidden-media {
             display: none;
         }
@@ -103,15 +102,12 @@
 <div id="game-container">
     <canvas id="gameCanvas"></canvas>
 
-    <!-- Hidden Media Elements -->
     <div id="hidden-media">
         <video id="jump-sound-vid" src="https://github.com/caxs23/runandjump/blob/main/jump.mp4?raw=true" preload="auto"></video>
-        <!-- Peaceful BGM: Using a public domain light fantasy track -->
         <audio id="bgm" src="https://orangefreesounds.com/wp-content/uploads/2021/05/Light-fantasy-background-music.mp3" loop></audio>
     </div>
 
     <div class="ui-overlay">
-        <!-- Status -->
         <div class="status-bar">
             <div>골드: <span id="gold">0</span>G</div>
             <div>공격력: <span id="power">10</span></div>
@@ -119,7 +115,6 @@
             <div>지역: <span id="location-name">마을</span></div>
         </div>
 
-        <!-- Dialog -->
         <div id="dialog" class="dialog-box">
             <p id="dialog-text">상인: 전리품을 팔러 왔나?</p>
             <button onclick="sellLoot()" class="bg-blue-500 text-white px-4 py-1 mt-2 rounded">전리품 판매 (개당 10G)</button>
@@ -127,16 +122,12 @@
             <button onclick="closeDialog()" class="ml-2 text-gray-500 underline">닫기</button>
         </div>
 
-        <!-- Shop -->
         <div id="shop" class="shop-menu">
             <h2 class="text-xl font-bold mb-4">장비 상점</h2>
-            <div id="shop-items" class="space-y-3">
-                <!-- Items populated by JS -->
-            </div>
+            <div id="shop-items" class="space-y-3"></div>
             <button onclick="toggleShop()" class="mt-4 w-full bg-red-400 text-white py-2 rounded">나가기</button>
         </div>
 
-        <!-- Controls -->
         <div class="controls">
             <div class="flex gap-4">
                 <div id="btn-left" class="btn">◀</div>
@@ -163,24 +154,27 @@ const state = {
     loot: 0,
     attackPower: 10,
     weaponLevel: 1,
-    location: 'town', // 'town' or 'field'
+    location: 'town', // 'town', 'field1', 'field2', 'field3'
     dialogVisible: false,
     shopVisible: false,
-    lastTime: 0,
     audioInitialized: false
 };
 
-// Player Assets
+const locations = {
+    'town': { name: '마을', next: 'field1', prev: null },
+    'field1': { name: '초보 사냥터 (토끼)', next: 'field2', prev: 'town' },
+    'field2': { name: '중급 사냥터 (여우)', next: 'field3', prev: 'field1' },
+    'field3': { name: '위험한 사냥터 (멧돼지)', next: null, prev: 'field2' }
+};
+
 const playerImg1 = new Image();
 playerImg1.src = 'https://github.com/caxs23/plaffy-bird/blob/main/1-removebg-preview.png?raw=true';
 const playerImg2 = new Image();
 playerImg2.src = 'https://github.com/caxs23/plaffy-bird/blob/main/2-removebg-preview.png?raw=true';
 
-// Game Constants
 const GRAVITY = 0.6;
-const GROUND_Y = 0.8; // Ratio of screen height
+const GROUND_Y = 0.8;
 
-// Resize
 function resize() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
@@ -188,7 +182,6 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-// Input Handling
 const keys = { left: false, right: false, jump: false, attack: false };
 
 function initAudio() {
@@ -207,108 +200,129 @@ function setupControls() {
     const bind = (id, key) => {
         const el = document.getElementById(id);
         el.addEventListener('touchstart', (e) => { 
-            e.preventDefault(); 
-            initAudio();
-            keys[key] = true; 
+            e.preventDefault(); initAudio(); keys[key] = true; 
         });
         el.addEventListener('touchend', (e) => { 
-            e.preventDefault(); 
-            keys[key] = false; 
+            e.preventDefault(); keys[key] = false; 
         });
-        el.addEventListener('mousedown', () => {
-            initAudio();
-            keys[key] = true;
-        });
+        el.addEventListener('mousedown', () => { initAudio(); keys[key] = true; });
         el.addEventListener('mouseup', () => keys[key] = false);
     };
     bind('btn-left', 'left');
     bind('btn-right', 'right');
     bind('btn-jump', 'jump');
     
-    document.getElementById('btn-attack').addEventListener('click', () => {
-        initAudio();
-        player.attack();
-    });
-    document.getElementById('btn-action').addEventListener('click', () => {
-        initAudio();
-        player.interact();
-    });
+    document.getElementById('btn-attack').addEventListener('click', () => { initAudio(); player.attack(); });
+    document.getElementById('btn-action').addEventListener('click', () => { initAudio(); player.interact(); });
 }
 
-// Objects
+// Entity Class for AI (NPCs and Monsters)
+class Entity {
+    constructor(x, y, size, emoji, hp = 0) {
+        this.x = x;
+        this.y = y;
+        this.size = size;
+        this.emoji = emoji;
+        this.hp = hp;
+        this.initialHp = hp;
+        this.dead = false;
+        this.vx = 0;
+        this.moveTimer = 0;
+        this.direction = Math.random() > 0.5 ? 1 : -1;
+    }
+
+    update() {
+        if (this.dead) return;
+        
+        // Simple AI: Move randomly
+        this.moveTimer--;
+        if (this.moveTimer <= 0) {
+            this.moveTimer = 60 + Math.random() * 120;
+            const rand = Math.random();
+            if (rand < 0.3) this.vx = 0; // Stop
+            else if (rand < 0.65) this.vx = 1; // Right
+            else this.vx = -1; // Left
+        }
+
+        this.x += this.vx * 0.5;
+
+        // Boundary
+        if (this.x < 50) this.vx = 1;
+        if (this.x > canvas.width - 50) this.vx = -1;
+    }
+
+    draw() {
+        if (this.dead) return;
+        ctx.save();
+        ctx.font = `${this.size}px serif`;
+        ctx.textAlign = 'center';
+        ctx.fillText(this.emoji, this.x, this.y + this.size);
+        
+        if (this.hp > 0) {
+            // HP Bar
+            const barW = this.size;
+            ctx.fillStyle = 'red';
+            ctx.fillRect(this.x - barW/2, this.y - 10, barW, 5);
+            ctx.fillStyle = 'green';
+            ctx.fillRect(this.x - barW/2, this.y - 10, barW * (this.hp / this.initialHp), 5);
+        }
+        ctx.restore();
+    }
+}
+
 const player = {
     x: 100,
     y: 0,
-    width: 90, // Increased from 60 to 90 (1.5x)
+    width: 90,
     height: 80,
     vx: 0,
     vy: 0,
     speed: 5,
     jumpPower: -12,
     isGrounded: false,
-    direction: 1, // 1: right, -1: left
+    direction: 1,
     frame: 0,
     walkCounter: 0,
     isAttacking: false,
     attackCooldown: 0,
 
     update() {
-        // Horizontal Move
-        if (keys.left) {
-            this.vx = -this.speed;
-            this.direction = -1;
-            this.walkCounter++;
-        } else if (keys.right) {
-            this.vx = this.speed;
-            this.direction = 1;
-            this.walkCounter++;
-        } else {
-            this.vx *= 0.8;
-            this.walkCounter = 0;
-        }
+        if (keys.left) { this.vx = -this.speed; this.direction = -1; this.walkCounter++; }
+        else if (keys.right) { this.vx = this.speed; this.direction = 1; this.walkCounter++; }
+        else { this.vx *= 0.8; this.walkCounter = 0; }
 
-        // Jump
         if (keys.jump && this.isGrounded) {
             this.vy = this.jumpPower;
             this.isGrounded = false;
             playJumpEffect();
         }
 
-        // Gravity
         this.vy += GRAVITY;
         this.x += this.vx;
         this.y += this.vy;
 
-        // Ground Collision
         const groundLevel = canvas.height * GROUND_Y - this.height;
-        if (this.y > groundLevel) {
-            this.y = groundLevel;
-            this.vy = 0;
-            this.isGrounded = true;
-        }
+        if (this.y > groundLevel) { this.y = groundLevel; this.vy = 0; this.isGrounded = true; }
 
-        // Screen Boundary / Map Switch
+        // Location Transitions
+        const loc = locations[state.location];
         if (this.x < -20) {
-            if (state.location === 'field') {
-                state.location = 'town';
+            if (loc.prev) {
+                state.location = loc.prev;
                 this.x = canvas.width - this.width;
-            } else {
-                this.x = -20;
-            }
+                changeLocation();
+            } else { this.x = -20; }
         }
         if (this.x > canvas.width - (this.width / 2)) {
-            if (state.location === 'town') {
-                state.location = 'field';
+            if (loc.next) {
+                state.location = loc.next;
                 this.x = 20;
-                spawnMonsters();
-            } else {
-                this.x = canvas.width - (this.width / 2);
-            }
+                changeLocation();
+            } else { this.x = canvas.width - (this.width / 2); }
         }
 
         if (this.attackCooldown > 0) this.attackCooldown--;
         if (this.attackCooldown < 10) this.isAttacking = false;
-
         this.frame = (Math.floor(this.walkCounter / 10) % 2);
     },
 
@@ -317,25 +331,15 @@ const player = {
         if (this.direction === -1) {
             ctx.scale(-1, 1);
             ctx.translate(-this.x - this.width, this.y);
-        } else {
-            ctx.translate(this.x, this.y);
-        }
-
-        // Animation: standing vs walking
-        const img = (this.walkCounter > 0 || !this.isGrounded) 
-            ? (this.frame === 0 ? playerImg1 : playerImg2)
-            : playerImg1;
-        
+        } else { ctx.translate(this.x, this.y); }
+        const img = (this.walkCounter > 0 || !this.isGrounded) ? (this.frame === 0 ? playerImg1 : playerImg2) : playerImg1;
         ctx.drawImage(img, 0, 0, this.width, this.height);
-
-        // Attack visual
         if (this.isAttacking) {
             ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
             ctx.beginPath();
             ctx.arc(this.width + 10, this.height / 2, 20, 0, Math.PI * 2);
             ctx.fill();
         }
-
         ctx.restore();
     },
 
@@ -343,23 +347,14 @@ const player = {
         if (this.attackCooldown > 0) return;
         this.isAttacking = true;
         this.attackCooldown = 20;
-        
-        playJumpEffect(); // Reuse the sound for attack as requested
-
-        // Hit Check
-        if (state.location === 'field') {
+        playJumpEffect();
+        if (state.location.startsWith('field')) {
             monsters.forEach(m => {
                 if (!m.dead) {
-                    const dx = (this.x + this.width/2) - (m.x + m.size/2);
-                    const dy = (this.y + this.height/2) - (m.y + m.size/2);
-                    const dist = Math.sqrt(dx*dx + dy*dy);
-                    if (dist < 100) { // Adjusted hit range slightly for wider body
+                    const dist = Math.abs(this.x - m.x);
+                    if (dist < 100) {
                         m.hp -= state.attackPower;
-                        if (m.hp <= 0) {
-                            m.dead = true;
-                            state.loot++;
-                            updateUI();
-                        }
+                        if (m.hp <= 0) { m.dead = true; state.loot++; updateUI(); }
                     }
                 }
             });
@@ -375,69 +370,68 @@ const player = {
 };
 
 const monsters = [];
-function spawnMonsters() {
+const villagers = [];
+
+function changeLocation() {
     monsters.length = 0;
-    const types = [
-        { emoji: '🐰', hp: 20, size: 40 },
-        { emoji: '🦊', hp: 50, size: 50 },
-        { emoji: '🐗', hp: 100, size: 60 }
-    ];
-    for (let i = 0; i < 5; i++) {
-        const type = types[Math.floor(Math.random() * types.length)];
-        monsters.push({
-            x: 300 + Math.random() * (canvas.width - 400),
-            y: canvas.height * GROUND_Y - type.size,
-            ...type,
-            dead: false,
-            initialHp: type.hp
-        });
+    villagers.length = 0;
+    
+    if (state.location === 'town') {
+        // Spawn wandering villagers
+        for (let i = 0; i < 3; i++) {
+            villagers.push(new Entity(
+                100 + Math.random() * (canvas.width - 200),
+                canvas.height * GROUND_Y - 50,
+                50,
+                ['👦', '👩', '👴'][i % 3]
+            ));
+        }
+    } else {
+        // Spawn wandering monsters based on field level
+        let type;
+        if (state.location === 'field1') type = { emoji: '🐰', hp: 20, size: 40 };
+        else if (state.location === 'field2') type = { emoji: '🦊', hp: 60, size: 50 };
+        else if (state.location === 'field3') type = { emoji: '🐗', hp: 150, size: 65 };
+        
+        for (let i = 0; i < 4; i++) {
+            monsters.push(new Entity(
+                300 + Math.random() * (canvas.width - 400),
+                canvas.height * GROUND_Y - type.size,
+                type.size,
+                type.emoji,
+                type.hp
+            ));
+        }
     }
+    updateUI();
 }
 
-// Background Drawing
 function drawBackground() {
-    // Sky
     const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
     grad.addColorStop(0, '#87CEEB');
     grad.addColorStop(1, '#E0F6FF');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Clouds
     ctx.fillStyle = 'white';
     ctx.beginPath();
-    ctx.arc(100, 100, 30, 0, Math.PI*2);
-    ctx.arc(130, 100, 40, 0, Math.PI*2);
-    ctx.arc(170, 100, 30, 0, Math.PI*2);
+    ctx.arc(100, 100, 30, 0, Math.PI*2); ctx.arc(130, 100, 40, 0, Math.PI*2); ctx.arc(170, 100, 30, 0, Math.PI*2);
     ctx.fill();
 
-    // Mountains (Simple triangles)
-    ctx.fillStyle = '#4A7c59';
+    // Thematic mountains
+    ctx.fillStyle = state.location === 'field3' ? '#4a3c3c' : '#4A7c59';
     ctx.beginPath();
-    ctx.moveTo(-100, canvas.height * GROUND_Y);
-    ctx.lineTo(200, canvas.height * 0.4);
-    ctx.lineTo(500, canvas.height * GROUND_Y);
+    ctx.moveTo(-100, canvas.height * GROUND_Y); ctx.lineTo(200, canvas.height * 0.4); ctx.lineTo(500, canvas.height * GROUND_Y);
     ctx.fill();
 
-    ctx.fillStyle = '#3d664a';
-    ctx.beginPath();
-    ctx.moveTo(300, canvas.height * GROUND_Y);
-    ctx.lineTo(600, canvas.height * 0.5);
-    ctx.lineTo(900, canvas.height * GROUND_Y);
-    ctx.fill();
-
-    // Ground
-    ctx.fillStyle = state.location === 'town' ? '#999' : '#7cfc00';
+    ctx.fillStyle = state.location === 'town' ? '#999' : (state.location === 'field3' ? '#5c4b3a' : '#7cfc00');
     ctx.fillRect(0, canvas.height * GROUND_Y, canvas.width, canvas.height * (1 - GROUND_Y));
     
-    // NPC in Town
     if (state.location === 'town') {
         ctx.font = '60px serif';
         ctx.fillText('👨‍🌾', canvas.width/2, canvas.height * GROUND_Y - 10);
-        ctx.font = '16px Arial';
-        ctx.fillStyle = 'black';
-        ctx.textAlign = 'center';
-        ctx.fillText('상인 (ACT 클릭)', canvas.width/2 + 25, canvas.height * GROUND_Y - 80);
+        ctx.font = '16px Arial'; ctx.fillStyle = 'black'; ctx.textAlign = 'center';
+        ctx.fillText('상인 (ACT 클릭)', canvas.width/2, canvas.height * GROUND_Y - 80);
     }
 }
 
@@ -445,18 +439,15 @@ function updateUI() {
     document.getElementById('gold').innerText = state.gold;
     document.getElementById('power').innerText = state.attackPower;
     document.getElementById('loot').innerText = state.loot;
-    document.getElementById('location-name').innerText = state.location === 'town' ? '마을' : '초보 사냥터';
+    document.getElementById('location-name').innerText = locations[state.location].name;
 }
 
 function sellLoot() {
     if (state.loot > 0) {
-        state.gold += state.loot * 10;
-        state.loot = 0;
-        updateUI();
-        document.getElementById('dialog-text').innerText = "상인: 고맙네! 아주 좋은 물건들이야.";
-    } else {
-        document.getElementById('dialog-text').innerText = "상인: 팔 물건이 없지 않은가?";
-    }
+        state.gold += state.loot * 15; // Increased price
+        state.loot = 0; updateUI();
+        document.getElementById('dialog-text').innerText = "상인: 훌륭하군! 더 많이 가져오게나.";
+    } else { document.getElementById('dialog-text').innerText = "상인: 빈손이구만?"; }
 }
 
 function closeDialog() {
@@ -466,17 +457,16 @@ function closeDialog() {
 }
 
 const shopItems = [
-    { name: "낡은 목검", power: 15, price: 100, level: 2 },
-    { name: "철검", power: 30, price: 300, level: 3 },
-    { name: "강철 대검", power: 60, price: 800, level: 4 },
-    { name: "용사의 검", power: 150, price: 2000, level: 5 }
+    { name: "낡은 목검", power: 25, price: 100, level: 2 },
+    { name: "강철 검", power: 55, price: 400, level: 3 },
+    { name: "마법 대검", power: 120, price: 1200, level: 4 },
+    { name: "신화의 검", power: 300, price: 5000, level: 5 }
 ];
 
 function toggleShop() {
     state.shopVisible = !state.shopVisible;
     const shopEl = document.getElementById('shop');
     shopEl.style.display = state.shopVisible ? 'block' : 'none';
-    
     if (state.shopVisible) {
         const itemsContainer = document.getElementById('shop-items');
         itemsContainer.innerHTML = '';
@@ -484,17 +474,8 @@ function toggleShop() {
             const isOwned = state.weaponLevel >= item.level;
             const btn = document.createElement('div');
             btn.className = "flex justify-between items-center border-b pb-2";
-            btn.innerHTML = `
-                <div>
-                    <div class="font-bold">${item.name}</div>
-                    <div class="text-xs text-gray-500">공격력: ${item.power}</div>
-                </div>
-                <button onclick="buyItem(${item.level}, ${item.price}, ${item.power})" 
-                    class="px-3 py-1 rounded ${isOwned ? 'bg-gray-300' : 'bg-yellow-400'}" 
-                    ${isOwned ? 'disabled' : ''}>
-                    ${isOwned ? '보유중' : item.price + 'G'}
-                </button>
-            `;
+            btn.innerHTML = `<div><div class="font-bold">${item.name}</div><div class="text-xs text-gray-500">공력: ${item.power}</div></div>
+                <button onclick="buyItem(${item.level}, ${item.price}, ${item.power})" class="px-3 py-1 rounded ${isOwned ? 'bg-gray-300' : 'bg-yellow-400'}" ${isOwned ? 'disabled' : ''}>${isOwned ? '보유중' : item.price + 'G'}</button>`;
             itemsContainer.appendChild(btn);
         });
     }
@@ -502,50 +483,29 @@ function toggleShop() {
 
 window.buyItem = function(level, price, power) {
     if (state.gold >= price) {
-        state.gold -= price;
-        state.weaponLevel = level;
-        state.attackPower = power;
-        updateUI();
-        toggleShop();
-        toggleShop(); // Refresh
-        document.getElementById('dialog-text').innerText = "상인: 탁월한 선택이네!";
-    } else {
-        alert("골드가 부족합니다!");
-    }
+        state.gold -= price; state.weaponLevel = level; state.attackPower = power;
+        updateUI(); toggleShop(); toggleShop();
+        document.getElementById('dialog-text').innerText = "상인: 무기가 아주 날카로워졌군!";
+    } else { alert("골드가 부족합니다!"); }
 };
 
-function loop(timestamp) {
+function loop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
     drawBackground();
-    
     player.update();
     player.draw();
 
-    if (state.location === 'field') {
-        monsters.forEach(m => {
-            if (!m.dead) {
-                ctx.font = `${m.size}px serif`;
-                ctx.fillText(m.emoji, m.x, m.y + m.size);
-                
-                // HP Bar
-                ctx.fillStyle = 'red';
-                ctx.fillRect(m.x, m.y - 10, m.size, 5);
-                ctx.fillStyle = 'green';
-                ctx.fillRect(m.x, m.y - 10, m.size * (m.hp / m.initialHp), 5);
-            }
-        });
+    if (state.location === 'town') {
+        villagers.forEach(v => { v.update(); v.draw(); });
+    } else {
+        monsters.forEach(m => { m.update(); m.draw(); });
     }
-
     requestAnimationFrame(loop);
 }
 
-// Start
 setupControls();
-spawnMonsters();
-updateUI();
+changeLocation(); // Initial spawn
 requestAnimationFrame(loop);
-
 </script>
 </body>
 </html>
