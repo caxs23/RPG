@@ -239,7 +239,7 @@ function setupControls() {
 const player = {
     x: 100,
     y: 0,
-    width: 60,
+    width: 90, // Increased from 60 to 90 (1.5x)
     height: 80,
     vx: 0,
     vy: 0,
@@ -291,18 +291,18 @@ const player = {
         if (this.x < -20) {
             if (state.location === 'field') {
                 state.location = 'town';
-                this.x = canvas.width - 50;
+                this.x = canvas.width - this.width;
             } else {
                 this.x = -20;
             }
         }
-        if (this.x > canvas.width - 40) {
+        if (this.x > canvas.width - (this.width / 2)) {
             if (state.location === 'town') {
                 state.location = 'field';
                 this.x = 20;
                 spawnMonsters();
             } else {
-                this.x = canvas.width - 40;
+                this.x = canvas.width - (this.width / 2);
             }
         }
 
@@ -353,7 +353,7 @@ const player = {
                     const dx = (this.x + this.width/2) - (m.x + m.size/2);
                     const dy = (this.y + this.height/2) - (m.y + m.size/2);
                     const dist = Math.sqrt(dx*dx + dy*dy);
-                    if (dist < 80) {
+                    if (dist < 100) { // Adjusted hit range slightly for wider body
                         m.hp -= state.attackPower;
                         if (m.hp <= 0) {
                             m.dead = true;
